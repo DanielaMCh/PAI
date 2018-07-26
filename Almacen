@@ -1,0 +1,243 @@
+const int Encoder_L = 3; // Pin Encoder_L optico
+const int Encoder_R = 2; // Pin Encoder_R optico
+int RPWM_Z_L = 5; // Arduino PWM output pin 5; connect to IBT-2 pin 1 (RPWM)
+int LPWM_Z_L = 6; // Arduino PWM output pin 6; connect to IBT-2 pin 2 (LPWM)
+int RPWM_Z_R = 7; // Arduino PWM output pin 7; connect to IBT-2 pin 1 (RPWM)
+int LPWM_Z_R = 8; // Arduino PWM output pin 8; connect to IBT-2 pin 2 (LPWM)
+int FCZLU = 28; // Final de Carrera Z Izquierda Arriba
+int FCZRU = 29; // Final de Carrera Z Derecha Arriba
+int FCZLD = 30; // Final de Carrera Z Izquierda Abajo
+int FCZRD = 31; // Final de Carrera Z Derecha Abajo
+bool FC_Z_L_U = 0;
+bool FC_Z_R_U = 0;
+bool FC_Z_L_D = 1;
+bool FC_Z_R_D = 1;
+int ISRCounter_L = 0; // Contador de la interrupcion
+int ISRCounter_R = 0; // Contador de la interrupcion
+float vel_L = 255;
+float vel_R = 255;
+int pasos_actualL = 0;
+int pasos_prevL = 0;
+int pasos_actualR = 0;
+int pasos_prevR = 0;
+int subiendo = 0;
+
+
+void setup(){
+  //Serial.begin(9600);
+  pinMode(Encoder_L, INPUT_PULLUP);
+  pinMode(Encoder_R, INPUT_PULLUP);
+  pinMode(FCZLU, INPUT_PULLUP);
+  pinMode(FCZRU, INPUT_PULLUP);
+  pinMode(FCZLD, INPUT_PULLUP);
+  pinMode(FCZRD, INPUT_PULLUP);
+// Configuracion de entradas de tipo interrupcion
+  attachInterrupt(digitalPinToInterrupt(Encoder_L), interruptCount_L, CHANGE );
+  attachInterrupt(digitalPinToInterrupt(Encoder_R), interruptCount_R, CHANGE );
+}
+
+/*
+ * Prototipos de funciones usadas
+ */
+ void interruptCount_L();
+ void interruptCount_R();
+ void fc();
+ void Up_R();
+ void Down_R();
+ void Up_L();
+ void Down_L();
+ void TwoUp();
+ void TwoDown();
+ void Stop_L();
+ void Stop_R();
+
+/*
+ * Serie de instrucciones que se realizaran de manera ciclica
+ * e indefinida siempre y cuando la tarjeta este energizada
+ */
+void loop(void){
+  if(!subiendo){
+    TwoUp();
+  }else{
+    TwoDown();    
+  }
+}
+
+/*
+ * Funcion de interrupcion para encoder izquierdo
+ * Aumenta el contador en una unidad.
+ * Imprime de forma serial el valor del contador
+ */
+void interruptCount_L(void){
+  ISRCounter_L++;
+}
+
+/*
+ * Funcion de interrupcion para encoder derecho
+ * Aumenta el contador en una unidad.
+ * Imprime de forma serial el valor del contador
+ */
+void interruptCount_R(void){
+  ISRCounter_R++;
+}
+
+/*
+ * Actualiza el valor de las variables FC_Z_*
+ */
+void fc(void){
+  FC_Z_L_D = digitalRead(FCZLD);
+  FC_Z_L_U = digitalRead(FCZLU);
+  FC_Z_R_D = digitalRead(FCZRD);
+  FC_Z_R_U = digitalRead(FCZRU);
+}
+
+/*
+ * Funcion con la que el motor de la derecha
+ * sube hasta tocar el final de carrera
+ */
+void Up_R(void){
+ISRCounter_R=0;
+  FC_Z_R_U = digitalRead(FCZRU);
+  while (FC_Z_R_U){
+    fc();
+    analogWrite(LPWM_Z_R, 255);
+    analogWrite(RPWM_Z_R, 0);
+  }
+  Stop_R();
+}
+
+/*
+ * Funcion con la que el motor de la derecha
+ * baja hasta tocar el final de carrera
+ */
+void Down_R(void) {
+ISRCounter_R=0;
+  FC_Z_R_D = digitalRead(FCZRD);
+  while (FC_Z_R_D == 1) {
+    fc();
+    analogWrite(LPWM_Z_R, 0);
+    analogWrite(RPWM_Z_R, 255);
+  }
+  Stop_R();
+}
+
+/*
+ * Funcion con la que el motor de la izquierda
+ * sube hasta tocar el final de carrera
+ */
+void Up_L(void){
+  int error = 0;
+  int p = 0;
+  fc();
+  while (FC_Z_L_U == 1) {
+    fc();
+    analogWrite(LPWM_Z_L, 255);
+    analogWrite(RPWM_Z_L, 0);
+    delay(100);
+  }
+  Stop_L();
+}
+
+/*
+ * Funcion con la que el motor de la izquierda
+ * baja hasta tocar el final de carrera
+ */
+void Down_L(void) {
+  FC_Z_L_D = digitalRead(FCZLD);
+  while (FC_Z_L_D) {
+    fc();
+    analogWrite(LPWM_Z_L, 0);
+    analogWrite(RPWM_Z_L, 255);
+    delay(100);
+  }
+  Stop_L();
+}
+
+void TwoUp(void){
+  int subiendo_L = 0;
+  int subiendo_R = 0;
+  fc();
+  if(FC_Z_R_U){
+    analogWrite(LPWM_Z_R, 252);
+    analogWrite(RPWM_Z_R, 0);
+  }else{
+    analogWrite(LPWM_Z_R, 0);
+    analogWrite(RPWM_Z_R, 0);
+    subiendo_R = 1;
+  }
+  if(FC_Z_L_U){
+    analogWrite(LPWM_Z_L, 255);
+    analogWrite(RPWM_Z_L, 0);
+  }else{
+    analogWrite(LPWM_Z_L, 0);
+    analogWrite(RPWM_Z_L, 0);
+    subiendo_L = 1;
+  }
+  subiendo = subiendo_L && subiendo_R;
+  if(ISRCounter_R == 1500){
+    subiendo = 1;
+  }
+  if(subiendo){
+    ISRCounter_L = 0;
+    ISRCounter_R = 0;
+  }
+  pasos_actualL = ISRCounter_L;
+  pasos_actualR = ISRCounter_R;
+  vel_L = pasos_actualL - pasos_prevL;
+  vel_R = pasos_actualR - pasos_prevR;
+  //Serial.println(abs(vel_L));
+  //Serial.println(abs(vel_R));
+  pasos_prevL = pasos_actualL;
+  pasos_prevR = pasos_actualR;
+}
+
+void TwoDown(void){
+  int subiendo_L = 1;
+  int subiendo_R = 1;
+  fc();
+  if(FC_Z_R_D){
+    analogWrite(LPWM_Z_R, 0);
+    analogWrite(RPWM_Z_R, 243);
+  }else{
+    analogWrite(LPWM_Z_R, 0);
+    analogWrite(RPWM_Z_R, 0);
+    subiendo_R = 0;
+  }
+  if(FC_Z_L_D){
+    analogWrite(LPWM_Z_L, 0);
+    analogWrite(RPWM_Z_L, 255);
+  }else{
+    analogWrite(LPWM_Z_L, 0);
+    analogWrite(RPWM_Z_L, 0);
+    subiendo_L = 0;
+  }
+  subiendo = subiendo_L || subiendo_R;
+  if(!subiendo){
+    ISRCounter_L = 0;
+    ISRCounter_R = 0;
+  }
+  pasos_actualL = ISRCounter_L;
+  pasos_actualR = ISRCounter_R;
+  vel_L = pasos_actualL - pasos_prevL;
+  vel_R = pasos_actualR - pasos_prevR;
+  //Serial.println(abs(vel_L));
+  //Serial.println(abs(vel_R));
+  pasos_prevL = pasos_actualL;
+  pasos_prevR = pasos_actualR;
+}
+
+/*
+ * Detiene el movimiento del motor izquierdo
+ */
+void Stop_L(void){
+  analogWrite(LPWM_Z_L, 0);
+  analogWrite(RPWM_Z_L, 0);
+}
+
+/*
+ * Detiene el movimiento del motor derecho
+ */
+void Stop_R(void){
+  analogWrite(LPWM_Z_R, 0);
+  analogWrite(RPWM_Z_R, 0);
+}
